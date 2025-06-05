@@ -1,30 +1,30 @@
-// screens/LoginScreen.js
+// screens/RegisterScreen.js
 import React, { useState } from "react";
-import { View, TextInput, Button, Text, StyleSheet, Alert } from "react-native";
+import { View, TextInput, Button, StyleSheet, Text, Alert } from "react-native";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebaseConfig";
-import { signInWithEmailAndPassword } from "firebase/auth";
 
-export default function LoginScreen({ navigation }) {
+export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleLogin = async () => {
+  const handleRegister = async () => {
     if (!email || !password) {
       Alert.alert("Błąd", "Wprowadź e-mail i hasło");
       return;
     }
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await createUserWithEmailAndPassword(auth, email, password);
       navigation.replace("Home");
     } catch (error) {
-      Alert.alert("Błąd logowania", error.message);
+      Alert.alert("Błąd rejestracji", error.message);
     }
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>🔐 Logowanie</Text>
+      <Text style={styles.title}>📝 Rejestracja</Text>
 
       <TextInput
         placeholder="Email"
@@ -42,11 +42,7 @@ export default function LoginScreen({ navigation }) {
         secureTextEntry
       />
 
-      <Button title="Zaloguj się" onPress={handleLogin} />
-
-      <Text style={styles.link} onPress={() => navigation.navigate("Register")}>
-        Nie masz konta? Zarejestruj się
-      </Text>
+      <Button title="Zarejestruj się" onPress={handleRegister} />
     </View>
   );
 }
@@ -71,10 +67,5 @@ const styles = StyleSheet.create({
     borderColor: "#ccc",
     padding: 12,
     marginBottom: 16,
-  },
-  link: {
-    marginTop: 12,
-    color: "#007bff",
-    textAlign: "center",
   },
 });

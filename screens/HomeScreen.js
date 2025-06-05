@@ -1,120 +1,129 @@
-import React, { useState } from "react";
+// screens/HomeScreen.js
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
   TextInput,
+  Button,
+  FlatList,
   TouchableOpacity,
-  SectionList,
   StyleSheet,
+  Alert,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
- 
+import { useNavigation } from "@react-navigation/native";
+import { auth, db } from "../firebaseConfig";
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  updateDoc,
+  deleteDoc,
+  doc,
+} from "firebase/firestore";
+import { signOut } from "firebase/auth";
+
 export default function HomeScreen() {
-  const [items, setItems] = useState([]);
-  const [searchShop, setSearchShop] = useState("");
   const navigation = useNavigation();
- 
-  useFocusEffect(
-    React.useCallback(() => {
-      const loadData = async () => {
-        const saved = await AsyncStorage.getItem("shoppingList");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          const sorted = parsed.sort((a, b) => a.purchased - b.purchased);
-          setItems(sorted);
-        }
-      };
-      loadData();
-    }, [])
-  );
- 
-  const saveItems = async (newItems) => {
-    setItems(newItems);
-    await AsyncStorage.setItem("shoppingList", JSON.stringify(newItems));
-  };
- 
-  const handleToggle = (id) => {
-    const updated = items.map((item) =>
-      item.id === id ? { ...item, purchased: !item.purchased } : item
+  const [products, setProducts] = useState([]);
+  const [filterStore, setFilterStore] = useState("");
+
+  useEffect(() => {
+    if (!auth.currentUser) return;
+    const q = query(
+      collection(db, "products"),
+      where("userId", "==", auth.currentUser.uid)
     );
-    const sorted = updated.sort((a, b) => a.purchased - b.purchased);
-    saveItems(sorted);
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setProducts(list);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const toggleBought = async (id, current) => {
+    try {
+      await updateDoc(doc(db, "products", id), {
+        isBought: !current,
+      });
+    } catch (error) {
+      Alert.alert("Błąd", error.message);
+    }
   };
- 
-  const handleDelete = (id) => {
-    const updated = items.filter((item) => item.id !== id);
-    saveItems(updated);
+
+  const deleteProduct = async (id) => {
+    try {
+      await deleteDoc(doc(db, "products", id));
+    } catch (error) {
+      Alert.alert("Błąd", error.message);
+    }
   };
- 
-  const filteredItems = items.filter((item) =>
-    searchShop
-      ? item.store.toLowerCase().includes(searchShop.toLowerCase())
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigation.replace("Login");
+    } catch (error) {
+      Alert.alert("Błąd", error.message);
+    }
+  };
+
+  const filtered = products.filter((p) =>
+    filterStore
+      ? p.store.toLowerCase().includes(filterStore.toLowerCase())
       : true
   );
- 
-  const sections = [{ title: "Moja lista zakupów", data: filteredItems }];
- 
+
   return (
-    <View style={styles.wrapper}>
-      <Text style={styles.header}>Lista Zakupów</Text>
- 
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => navigation.navigate("AddProduct")}
-      >
-        <Text style={styles.addText}>+ Dodaj</Text>
-      </TouchableOpacity>
- 
-      <Text style={styles.filterLabel}>Filtruj po sklepie:</Text>
+    <View style={styles.container}>
+      <View style={styles.topRow}>
+        <Button
+          title="➕ Dodaj"
+          onPress={() => navigation.navigate("AddProduct")}
+        />
+        <Button title="🚪 Wyloguj" color="gray" onPress={handleLogout} />
+      </View>
+
       <TextInput
+        placeholder="Filtruj po sklepie"
+        value={filterStore}
+        onChangeText={setFilterStore}
         style={styles.input}
-        placeholder="Nazwa sklepu"
-        value={searchShop}
-        onChangeText={setSearchShop}
       />
- 
-      <SectionList
-        sections={sections}
-        keyExtractor={(item) => item.id.toString()}
-        renderSectionHeader={({ section: { title } }) => (
-          <Text style={styles.sectionTitle}>{title}</Text>
-        )}
+
+      <FlatList
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        ListEmptyComponent={<Text style={styles.empty}>Brak produktów</Text>}
         renderItem={({ item }) => (
-          <View
-            style={[
-              styles.listItem,
-              item.purchased && { backgroundColor: "#e1f8dc" },
-            ]}
-          >
+          <View style={styles.item}>
             <TouchableOpacity
               style={{ flex: 1 }}
               onPress={() =>
-                navigation.navigate("ProductDetails", {
-                  name: item.name,
-                  price: item.price,
-                  store: item.store,
-                })
+                navigation.navigate("ProductDetail", { product: item })
               }
             >
-              <Text
-                style={[
-                  styles.itemText,
-                  item.purchased && {
-                    textDecorationLine: "line-through",
-                    color: "#555",
-                  },
-                ]}
-              >
-                {item.name} – {item.price} zł ({item.store})
+              <Text style={styles.name}>{item.name}</Text>
+              <Text style={styles.info}>
+                {item.store} | {item.price} zł
               </Text>
             </TouchableOpacity>
+
             <View style={styles.actions}>
-              <TouchableOpacity onPress={() => handleToggle(item.id)}>
-                <Text style={styles.markDone}>✔</Text>
+              <TouchableOpacity
+                onPress={() => toggleBought(item.id, item.isBought)}
+              >
+                <Text style={{ fontSize: 18 }}>
+                  {item.isBought ? "✅" : "🛒"}
+                </Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleDelete(item.id)}>
-                <Text style={styles.remove}>🗑</Text>
+              <TouchableOpacity onPress={() => deleteProduct(item.id)}>
+                <Text style={{ color: "red", marginLeft: 10 }}>🗑</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -123,50 +132,42 @@ export default function HomeScreen() {
     </View>
   );
 }
- 
+
 const styles = StyleSheet.create({
-  wrapper: { flex: 1, padding: 20, backgroundColor: "#fff" },
-  header: {
-    fontSize: 26,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 15,
+  container: { flex: 1, padding: 16, backgroundColor: "#fdfdfd" },
+  topRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
   },
   input: {
     borderWidth: 1,
-    borderColor: "#bbb",
+    borderRadius: 8,
     padding: 10,
-    borderRadius: 6,
-    marginBottom: 10,
+    marginBottom: 16,
+    backgroundColor: "#f2f2f2",
   },
-  addButton: {
-    backgroundColor: "#3366ff",
-    padding: 12,
-    borderRadius: 6,
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  addText: { color: "white", fontWeight: "bold", fontSize: 16 },
-  filterLabel: { fontSize: 18, fontWeight: "bold", marginBottom: 10 },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    backgroundColor: "#f0f0f0",
-    padding: 8,
-    marginBottom: 5,
-  },
-  listItem: {
-    backgroundColor: "#f7f7f7",
-    padding: 12,
-    borderRadius: 6,
-    marginBottom: 10,
+  item: {
+    padding: 14,
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    borderColor: "#e0e0e0",
+    borderWidth: 1,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 10,
   },
-  itemText: { fontSize: 16 },
-  actions: { flexDirection: "row", gap: 10 },
-  markDone: { fontSize: 18, color: "green" },
-  remove: { fontSize: 18, color: "red", marginLeft: 10 },
+  name: { fontSize: 16, fontWeight: "600" },
+  info: { fontSize: 13, color: "#777" },
+  actions: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 10,
+  },
+  empty: {
+    textAlign: "center",
+    marginTop: 30,
+    color: "gray",
+    fontStyle: "italic",
+  },
 });
- 
